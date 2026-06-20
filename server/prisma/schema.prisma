@@ -1,0 +1,394 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              Int               @id @default(autoincrement())
+  username        String            @unique
+  email           String            @unique
+  password        String
+  displayName     String
+  avatarUrl       String?
+  avatarPublicId  String?
+  isActive        Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  
+  roles           UserRole[]
+  creatorProfile  CreatorProfile?
+  wallet          Wallet?
+  topupOrders     WalletTopupOrder[]
+  submissions     ProductSubmission[] @relation("ReviewedBy")
+  wishlist        Wishlist[]
+  cart            Cart?
+  orders          StoreOrder[]
+  library         UserLibrary[]
+  readingProgress ReadingProgress[]
+  reviews         ProductReview[]
+
+  @@map("users")
+}
+
+model Role {
+  id          Int        @id @default(autoincrement())
+  name        String     @unique
+  description String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  
+  users       UserRole[]
+
+  @@map("roles")
+}
+
+model UserRole {
+  userId Int
+  roleId Int
+  user   User @relation(fields: [userId], references: [id])
+  role   Role @relation(fields: [roleId], references: [id])
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model CreatorProfile {
+  id              Int      @id @default(autoincrement())
+  userId          Int      @unique
+  penName         String
+  bio             String?
+  bannerUrl       String?
+  bannerPublicId  String?
+  status          String   @default("ACTIVE") // ACTIVE, SUSPENDED
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  user            User     @relation(fields: [userId], references: [id])
+  products        Product[]
+  earnings        CreatorEarning[]
+  settlements     CreatorSettlement[]
+
+  @@map("creator_profiles")
+}
+
+model Wallet {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @unique
+  balance   Decimal  @default(0) @db.Decimal(15, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  user      User     @relation(fields: [userId], references: [id])
+  transactions WalletTransaction[]
+
+  @@map("wallets")
+}
+
+model WalletTransaction {
+  id            Int      @id @default(autoincrement())
+  walletId      Int
+  type          String   // TOPUP, PURCHASE, REFUND, WITHDRAW
+  amount        Decimal  @db.Decimal(15, 2)
+  description   String?
+  referenceType String?  // ORDER, TOPUP_ORDER
+  referenceId   Int?
+  createdAt     DateTime @default(now())
+  
+  wallet        Wallet   @relation(fields: [walletId], references: [id])
+
+  @@map("wallet_transactions")
+}
+
+model WalletTopupOrder {
+  id               Int      @id @default(autoincrement())
+  userId           Int
+  amount           Decimal  @db.Decimal(15, 2)
+  status           String   @default("PENDING") // PENDING, COMPLETED, CANCELLED
+  paymentMethod    String?
+  paymentReference String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  user             User     @relation(fields: [userId], references: [id])
+
+  @@map("wallet_topup_orders")
+}
+
+model Genre {
+  id        Int      @id @default(autoincrement())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  products  ProductGenre[]
+
+  @@map("genres")
+}
+
+model Product {
+  id                 Int      @id @default(autoincrement())
+  creatorId          Int?
+  title              String
+  slug               String   @unique
+  authorName         String
+  description        String   @db.Text
+  price              Decimal  @db.Decimal(15, 2)
+  coverImageUrl      String?
+  coverImagePublicId String?
+  fileUrl            String?
+  filePublicId       String?
+  productType        String   // EBOOK, NOVEL, COMIC
+  status             String   @default("PUBLISHED") // DRAFT, PENDING, PUBLISHED, REJECTED
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  
+  creator            CreatorProfile? @relation(fields: [creatorId], references: [id])
+  genres             ProductGenre[]
+  chapters           Chapter[]
+  submissions        ProductSubmission[]
+  wishlist           Wishlist[]
+  cartItems          CartItem[]
+  orderItems         StoreOrderItem[]
+  libraryItems       UserLibrary[]
+  revenueStat        ProductRevenueStat?
+  readingProgress    ReadingProgress[]
+  reviews            ProductReview[]
+
+  @@map("products")
+}
+
+model ProductGenre {
+  productId Int
+  genreId   Int
+  product   Product @relation(fields: [productId], references: [id])
+  genre     Genre   @relation(fields: [genreId], references: [id])
+
+  @@id([productId, genreId])
+  @@map("product_genres")
+}
+
+model Chapter {
+  id            Int      @id @default(autoincrement())
+  productId     Int
+  title         String
+  chapterNumber Int
+  content       String?  @db.LongText
+  imageUrl      String?
+  imagePublicId String?
+  imagesJson    String?  @db.LongText
+  isFree        Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  product       Product  @relation(fields: [productId], references: [id])
+  readingProgress ReadingProgress[]
+
+  @@map("chapters")
+}
+
+model ProductSubmission {
+  id           Int      @id @default(autoincrement())
+  productId    Int
+  creatorId    Int
+  status       String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  note         String?  @db.Text
+  reviewedById Int?
+  reviewedAt   DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  product      Product  @relation(fields: [productId], references: [id])
+  reviewedBy   User?    @relation("ReviewedBy", fields: [reviewedById], references: [id])
+
+  @@map("product_submissions")
+}
+
+model Discount {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique
+  type      String   // PERCENTAGE, FIXED
+  value     Decimal  @db.Decimal(15, 2)
+  startsAt  DateTime?
+  endsAt    DateTime?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("discounts")
+}
+
+model Wishlist {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  productId Int
+  createdAt DateTime @default(now())
+  
+  user      User     @relation(fields: [userId], references: [id])
+  product   Product  @relation(fields: [productId], references: [id])
+
+  @@unique([userId, productId])
+  @@map("wishlist")
+}
+
+model Cart {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  user      User     @relation(fields: [userId], references: [id])
+  items     CartItem[]
+
+  @@map("carts")
+}
+
+model CartItem {
+  id        Int      @id @default(autoincrement())
+  cartId    Int
+  productId Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  cart      Cart     @relation(fields: [cartId], references: [id])
+  product   Product  @relation(fields: [productId], references: [id])
+
+  @@unique([cartId, productId])
+  @@map("cart_items")
+}
+
+model StoreOrder {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  totalAmount Decimal  @db.Decimal(15, 2)
+  status      String   @default("COMPLETED") // COMPLETED, CANCELLED
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  user        User     @relation(fields: [userId], references: [id])
+  items       StoreOrderItem[]
+
+  @@map("store_orders")
+}
+
+model StoreOrderItem {
+  id        Int      @id @default(autoincrement())
+  orderId   Int
+  productId Int
+  price     Decimal  @db.Decimal(15, 2)
+  createdAt DateTime @default(now())
+  
+  order     StoreOrder @relation(fields: [orderId], references: [id])
+  product   Product    @relation(fields: [productId], references: [id])
+  earnings  CreatorEarning[]
+
+  @@map("store_order_items")
+}
+
+model UserLibrary {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  productId   Int
+  purchasedAt DateTime @default(now())
+  
+  user        User     @relation(fields: [userId], references: [id])
+  product     Product  @relation(fields: [productId], references: [id])
+
+  @@unique([userId, productId])
+  @@map("user_library")
+}
+
+model RevenueShareTier {
+  id              Int      @id @default(autoincrement())
+  name            String
+  creatorPercent  Decimal  @db.Decimal(5, 2)
+  platformPercent Decimal  @db.Decimal(5, 2)
+  isDefault       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("revenue_share_tiers")
+}
+
+model ProductRevenueStat {
+  id              Int      @id @default(autoincrement())
+  productId       Int      @unique
+  totalRevenue    Decimal  @default(0) @db.Decimal(15, 2)
+  totalSales      Int      @default(0)
+  creatorRevenue  Decimal  @default(0) @db.Decimal(15, 2)
+  platformRevenue Decimal  @default(0) @db.Decimal(15, 2)
+  updatedAt       DateTime @updatedAt
+  
+  product         Product  @relation(fields: [productId], references: [id])
+
+  @@map("product_revenue_stats")
+}
+
+model CreatorEarning {
+  id               Int      @id @default(autoincrement())
+  creatorId        Int
+  productId        Int
+  orderItemId      Int
+  amount           Decimal  @db.Decimal(15, 2)
+  status           String   @default("PENDING") // PENDING, SETTLED
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  creator          CreatorProfile @relation(fields: [creatorId], references: [id])
+  orderItem        StoreOrderItem @relation(fields: [orderItemId], references: [id])
+
+  @@map("creator_earnings")
+}
+
+model CreatorSettlement {
+  id        Int      @id @default(autoincrement())
+  creatorId Int
+  amount    Decimal  @db.Decimal(15, 2)
+  status    String   @default("PENDING") // PENDING, COMPLETED
+  note      String?  @db.Text
+  settledAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  creator   CreatorProfile @relation(fields: [creatorId], references: [id])
+
+  @@map("creator_settlements")
+}
+
+model ReadingProgress {
+  id              Int      @id @default(autoincrement())
+  userId          Int
+  productId       Int
+  chapterId       Int?
+  progressPercent Float    @default(0)
+  lastReadAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  user            User     @relation(fields: [userId], references: [id])
+  product         Product  @relation(fields: [productId], references: [id])
+  chapter         Chapter? @relation(fields: [chapterId], references: [id])
+
+  @@unique([userId, productId])
+  @@map("reading_progress")
+}
+
+model ProductReview {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  productId Int
+  rating    Int      @default(5)
+  comment   String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  user      User     @relation(fields: [userId], references: [id])
+  product   Product  @relation(fields: [productId], references: [id])
+
+  @@unique([userId, productId])
+  @@map("product_reviews")
+}
